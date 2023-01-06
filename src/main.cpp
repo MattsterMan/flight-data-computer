@@ -1,33 +1,45 @@
 #include <Arduino.h>
 #include <SPI.h>
+#include <string>
 #include "Adafruit_MPL3115A2.h"
-#include "Adafruit_I2CDevice.h"
-#include "RP2040_SD.h"
+//#include "RP2040_SD.h"
+#include "RFTransmitter.h"
 
-#define PIN_SD_MOSI       PIN_SPI0_MOSI
+/*#define PIN_SD_MOSI       PIN_SPI0_MOSI
 #define PIN_SD_MISO       PIN_SPI0_MISO
 #define PIN_SD_SCK        PIN_SPI0_SCK
 #define PIN_SD_SS         PIN_SPI0_SS
 
-#define _RP2040_SD_LOGLEVEL_       0
+#define _RP2040_SD_LOGLEVEL_       0*/
+
+#define NODE_ID          1
+#define OUTPUT_PIN       3u
 
 Adafruit_MPL3115A2 baro;
+int count;
+float init_alt;
+
+RFTransmitter transmitter(OUTPUT_PIN, NODE_ID);
 
 void setup() {
     pinMode(LED_BUILTIN, OUTPUT);
+    count = 0;
 
     Serial.begin(9600);
     while (!Serial);
-    Serial.println("Checking for Sensor...");
+    Serial.println("Checking for Barometer Sensor...");
 
     if (!baro.begin()) {
         Serial.println("Could not find sensor. Check wiring.");
+    }
+    else{
+        Serial.println("Sensor found.");
     }
 
     // use to set sea level pressure for current location
     // this is needed for accurate altitude measurement
     // STD SLP = 1013.26 hPa
-    baro.setSeaPressure(1017.2);
+    baro.setSeaPressure(1024.2);
 
     //SD-CARD-CODE------------------------------------------------------------------------------------------------------
 
@@ -45,7 +57,7 @@ void setup() {
 void loop() {
     digitalWrite(LED_BUILTIN, HIGH);
     // make a string for assembling the data to log:
-    String dataString = "";
+    /*String dataString = "";
 
     //take the altitude value from the MPL3115A2
     //and add it to the string "dataString"
@@ -67,8 +79,22 @@ void loop() {
     else {
         Serial.println("error opening datalog.txt");
     }
-    Serial.print(altitude);
+    Serial.print(altitude);*/
+
+    if (count == 0) {
+        init_alt = baro.getAltitude();
+    }
+
+    float altitude = baro.getAltitude() /*- init_alt*/;
+
+    char* msg = std::to_string(altitude).data();
+    transmitter.send((byte *)msg, strlen(reinterpret_cast<const char *>(msg)) + 1);
+    Serial.println(msg);
+
     digitalWrite(LED_BUILTIN, LOW);
 
     delay(500);
+    transmitter.resend((byte *)msg, strlen(reinterpret_cast<const char *>(msg)) + 1);
+
+    count++;
 }
