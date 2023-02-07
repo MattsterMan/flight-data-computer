@@ -2,31 +2,35 @@
 #include <SPI.h>
 #include <string>
 #include "Adafruit_MPL3115A2.h"
-//#include "RP2040_SD.h"
+#include "RP2040_SD.h"
 #include "RFTransmitter.h"
+#include <EEPROM.h>
 
-/*#define PIN_SD_MOSI       PIN_SPI0_MOSI
+#define PIN_SD_MOSI       PIN_SPI0_MOSI
 #define PIN_SD_MISO       PIN_SPI0_MISO
 #define PIN_SD_SCK        PIN_SPI0_SCK
 #define PIN_SD_SS         PIN_SPI0_SS
-
-#define _RP2040_SD_LOGLEVEL_       0*/
 
 #define NODE_ID          1
 #define OUTPUT_PIN       3u
 
 Adafruit_MPL3115A2 baro;
 int count;
+int addr = 0;
+byte value;
 float init_alt;
 
 RFTransmitter transmitter(OUTPUT_PIN, NODE_ID);
 
 void setup() {
+    //set onboard LED to be an output
     pinMode(LED_BUILTIN, OUTPUT);
     count = 0;
 
+    //open serial port and wait for connection
     Serial.begin(9600);
     while (!Serial);
+    EEPROM.begin(256);
     Serial.println("Checking for Barometer Sensor...");
 
     if (!baro.begin()) {
@@ -43,7 +47,7 @@ void setup() {
 
     //SD-CARD-CODE------------------------------------------------------------------------------------------------------
 
-    Serial.print("Initializing SD card...");
+    /*Serial.print("Initializing SD card...");
 
     // see if the card is present and can be initialized:
     if (!SD.begin(PIN_SD_SS)) {
@@ -51,49 +55,57 @@ void setup() {
         // don't do anything more:
         return;
     }
-    Serial.println("Card initialized.");
+    Serial.println("Card initialized.");*/
+
+    //------------------------------------------------------------------------------------------------------------------
 }
 
 void loop() {
+    //set onboard LED to on
     digitalWrite(LED_BUILTIN, HIGH);
-    // make a string for assembling the data to log:
-    /*String dataString = "";
 
-    //take the altitude value from the MPL3115A2
-    //and add it to the string "dataString"
-    float altitude = baro.getAltitude();
-    dataString += String(altitude);
-
-    // open the file. note that only one file can be open at a time,
-    // so you have to close this one before opening another.
-    File dataFile = SD.open("datalog.txt", FILE_WRITE);
-
-    // if the file is available, write to it:
-    if (dataFile) {
-        dataFile.println(dataString);
-        dataFile.close();
-        // print to the serial port too:
-        Serial.println(dataString);
-    }
-        // if the file isn't open, pop up an error:
-    else {
-        Serial.println("error opening datalog.txt");
-    }
-    Serial.print(altitude);*/
-
+    //initial barometric reading for ground level
     if (count == 0) {
         init_alt = baro.getAltitude();
     }
 
-    float altitude = baro.getAltitude() /*- init_alt*/;
+    //set a variable equal to the output of the altitude reading on the MPL3115
+    float altitude = baro.getAltitude();
+    // write the value to the appropriate byte of the EEPROM.
+    // these values will remain there when the board is
+    // turned off.
+    EEPROM.write(addr, altitude);
+    // read a byte from the current address of the EEPROM
+    value = EEPROM.read(addr);
 
+    Serial.print(addr);
+    Serial.print("\t");
+    Serial.print(value, DEC);
+    Serial.println();
+
+    // advance to the next address.  there are 512 bytes in
+    // the EEPROM, so go back to 0 when we hit 512.
+    // save all changes to the flash.
+    addr = addr + 1;
+    if (addr == 16) {
+        addr = 0;
+        if (EEPROM.commit()) {
+            Serial.println("EEPROM successfully committed");
+        } else {
+            Serial.println("ERROR! EEPROM commit failed");
+        }
+        return;
+    }
+
+    //converts altitude to string
     char* msg = std::to_string(altitude).data();
     transmitter.send((byte *)msg, strlen(reinterpret_cast<const char *>(msg)) + 1);
     Serial.println(msg);
 
+    //set oboard LED to off
     digitalWrite(LED_BUILTIN, LOW);
 
-    delay(500);
+    //delay(500);
     transmitter.resend((byte *)msg, strlen(reinterpret_cast<const char *>(msg)) + 1);
 
     count++;
